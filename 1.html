@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recipe Finder Portfolio</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f9fafb;
+    }
+
+    .star {
+      cursor: pointer;
+      font-size: 1.5rem;
+    }
+
+    .star.filled {
+      color: gold;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+  <header class="bg-green-600 text-white p-6 shadow-md flex justify-between items-center">
+    <button onclick="location.reload()" class="text-3xl font-bold hover:underline">🍳 Recipe Finder</button>
+    <button onclick="showFavorites()" class="bg-white text-green-600 px-4 py-2 rounded shadow hover:bg-gray-100">⭐ Favorites</button>
+  </header>
+
+  <main class="p-6 max-w-6xl mx-auto">
+    <div class="bg-white p-6 rounded-xl shadow-md">
+      <label class="block text-xl font-semibold mb-2" for="ingredientInput">Enter Ingredients (comma separated):</label>
+      <input id="ingredientInput" type="text" placeholder="e.g., chicken, tomato, cheese"
+        class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500">
+
+      <label class="block text-lg font-semibold mt-4 mb-2" for="excludeInput">Exclude Ingredients:</label>
+      <input id="excludeInput" type="text" placeholder="e.g., nuts, eggs"
+        class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-400">
+
+      <label class="block text-lg font-semibold mt-4 mb-2" for="dietSelect">Filter by Diet:</label>
+      <select id="dietSelect" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500">
+        <option value="">None</option>
+        <option value="vegetarian">Vegetarian</option>
+        <option value="vegan">Vegan</option>
+        <option value="gluten free">Gluten Free</option>
+        <option value="ketogenic">Ketogenic</option>
+      </select>
+
+      <button onclick="resetAndSearch()"
+        class="mt-4 w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition">🔍 Search Recipes</button>
+    </div>
+
+    <!-- Loader Spinner -->
+    <div id="loader" class="flex justify-center mt-10 hidden">
+      <div class="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <div id="results" class="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+
+    <div id="recipeModal" class="fixed inset-0 hidden bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white w-11/12 md:w-3/4 lg:w-2/3 max-h-[90vh] overflow-auto rounded-xl p-6 relative">
+        <button onclick="closeModal()" class="absolute top-3 right-4 text-2xl font-bold">&times;</button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_KEY = "858815aa5f9244c58047dfca2c80308b";
+    let offset = 0;
+    let isLoading = false;
+    let favorites = JSON.parse(localStorage.getItem('favorites')) || [];
+
+    window.addEventListener("scroll", () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 && !isLoading) {
+        searchRecipes(false);
+      }
+    });
+
+    function toggleFavorite(recipe) {
+      const index = favorites.findIndex(f => f.id === recipe.id);
+      if (index > -1) {
+        favorites.splice(index, 1);
+      } else {
+        favorites.push(recipe);
+      }
+      localStorage.setItem('favorites', JSON.stringify(favorites));
+      renderFavorites();
+      document.querySelectorAll(`[data-id='${recipe.id}']`).forEach(btn => {
+        btn.classList.toggle('filled');
+      });
+    }
+
+    function isFavorite(id) {
+      return favorites.some(f => f.id === id);
+    }
+
+    function showFavorites() {
+      const results = document.getElementById("results");
+      results.innerHTML = '';
+      favorites.forEach(recipe => {
+        renderCard(recipe);
+      });
+    }
+
+    function renderFavorites() {
+      document.querySelectorAll('.star').forEach(btn => {
+        const id = +btn.dataset.id;
+        if (isFavorite(id)) btn.classList.add('filled');
+        else btn.classList.remove('filled');
+      });
+    }
+
+    function resetAndSearch() {
+      offset = 0;
+      document.getElementById("results").innerHTML = '';
+      searchRecipes(true);
+    }
+
+    async function searchRecipes(reset = false) {
+      isLoading = true;
+      document.getElementById("loader").classList.remove("hidden");
+
+      const input = document.getElementById("ingredientInput").value;
+      const exclude = document.getElementById("excludeInput").value;
+      const diet = document.getElementById("dietSelect").value;
+
+      try {
+        const response = await axios.get(`https://api.spoonacular.com/recipes/complexSearch`, {
+          params: {
+            includeIngredients: input,
+            excludeIngredients: exclude,
+            diet: diet || undefined,
+            number: 10,
+            offset: offset,
+            addRecipeNutrition: true,
+            addRecipeInformation: true,
+            apiKey: API_KEY
+          }
+        });
+
+        const recipes = response.data.results;
+        recipes.forEach(recipe => {
+          renderCard(recipe);
+        });
+        offset += 10;
+        renderFavorites();
+
+      } catch (error) {
+        console.error(error);
+      } finally {
+        isLoading = false;
+        document.getElementById("loader").classList.add("hidden");
+      }
+    }
+
+    function renderCard(recipe) {
+      const resultsContainer = document.getElementById("results");
+
+      const calories = recipe.nutrition?.nutrients?.find(n => n.name === "Calories")?.amount || 'N/A';
+      const protein = recipe.nutrition?.nutrients?.find(n => n.name === "Protein")?.amount || 'N/A';
+
+      const minimalRecipe = {
+        id: recipe.id,
+        title: recipe.title,
+        image: recipe.image,
+        readyInMinutes: recipe.readyInMinutes,
+        nutrition: {
+          nutrients: [
+            { name: "Calories", amount: calories },
+            { name: "Protein", amount: protein }
+          ]
+        }
+      };
+
+      const card = document.createElement("div");
+      card.className = "bg-white p-4 rounded-lg shadow hover:shadow-xl transition";
+
+      card.innerHTML = `
+        <img src="${recipe.image}" alt="${recipe.title}" class="w-full h-48 object-cover rounded-md">
+        <div class="flex justify-between items-start">
+          <h2 class="text-xl font-bold mt-3">${recipe.title}</h2>
+          <span class="star ${isFavorite(recipe.id) ? 'filled' : ''}" data-id="${recipe.id}" onclick='toggleFavorite(${JSON.stringify(minimalRecipe)})'>★</span>
+        </div>
+        <p class="text-sm mt-1">⏱ ${recipe.readyInMinutes} minutes</p>
+        <p class="text-sm mt-1">Calories: ${calories} kcal | Protein: ${protein} g</p>
+        <button onclick="viewRecipe(${recipe.id})"
+          class="inline-block mt-4 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">🍽 View Recipe</button>
+      `;
+
+      resultsContainer.appendChild(card);
+    }
+
+    async function viewRecipe(recipeId) {
+      const modal = document.getElementById("recipeModal");
+      const modalContent = document.getElementById("modalContent");
+
+      modal.classList.remove("hidden");
+      modalContent.innerHTML = '<p class="text-center">Loading...</p>';
+
+      try {
+        const response = await axios.get(`https://api.spoonacular.com/recipes/${recipeId}/information`, {
+          params: { apiKey: API_KEY, includeNutrition: true }
+        });
+
+        const recipe = response.data;
+        const calories = recipe.nutrition?.nutrients?.find(n => n.name === "Calories")?.amount || "N/A";
+        const protein = recipe.nutrition?.nutrients?.find(n => n.name === "Protein")?.amount || "N/A";
+
+        modalContent.innerHTML = `
+          <h2 class="text-2xl font-bold mb-2">${recipe.title}</h2>
+          <img src="${recipe.image}" class="w-full h-64 object-cover rounded-md mb-4" alt="${recipe.title}">
+          <h3 class="text-xl font-semibold mb-2">Summary</h3>
+          <div class="prose mb-4">${recipe.summary}</div>
+          <h3 class="text-xl font-semibold mb-2">Nutritional Info</h3>
+          <ul class="list-disc ml-5 mb-4">
+            <li>Calories: ${calories} kcal</li>
+            <li>Protein: ${protein} g</li>
+          </ul>
+          <h3 class="text-xl font-semibold mb-2">Instructions</h3>
+          <div class="prose">${recipe.instructions || "<p>No instructions available.</p>"}</div>
+        `;
+
+      } catch (error) {
+        console.error(error);
+        modalContent.innerHTML = '<p class="text-red-500 text-center">Unable to load recipe details.</p>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById("recipeModal").classList.add("hidden");
+    }
+  </script>
+
+  <footer class="bg-gray-800 text-white mt-10 p-6 text-center text-sm">
+    <p>Created by [Your Name] - Portfolio Project</p>
+  </footer>
+</body>
+
+</html>
